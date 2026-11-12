@@ -82,9 +82,9 @@ Deberías ver que la primera resolución devuelve `93.184.216.34`, la segunda `1
 
 ## 3. DNS rebinding end-to-end
 
-Este es el escenario que pasa por el código de validación de una app. [vulnerable_app_resolve_check.py](./vulnerable_app_resolve_check.py) resuelve el host y valida la IP una vez, pero luego `requests.get()` vuelve a resolver el nombre para conectarse. El DNS cambiante puede hacer que la segunda resolución vaya a `127.0.0.1`.
+Este es el escenario que pasa por el código de validación de una app. [vulnerable_app_resolve_check.py](./vulnerable_app_resolve_check.py) resuelve el host y valida la IP una vez, pero luego `requests.get()` vuelve a resolver el nombre para conectarse. La app no reutiliza la IP que validó; el DNS cambiante puede hacer que la segunda resolución vaya a `127.0.0.1`.
 
-[run_with_fake_dns.py](./run_with_fake_dns.py) conecta la app al DNS de laboratorio para `midominio.test`, sin cambiar la configuración DNS de Windows.
+[run_with_fake_dns.py](./run_with_fake_dns.py) es el **puente DNS** de la demo, no el servidor DNS falso. Guarda la función original `socket.getaddrinfo` y la reemplaza dentro de ese proceso: solo cuando la app pide resolver `midominio.test`, el puente envía una consulta DNS por UDP a `127.0.0.1:5354`. Para cualquier otro nombre, usa la función original. Instala este reemplazo antes de importar la app, para que tanto su validación como `requests` pasen por el puente. Así se prueba el flujo sin cambiar la configuración DNS de Windows.
 
 ### Pasos
 
@@ -124,6 +124,30 @@ No. Son **resolvers recursivos**: buscan la respuesta DNS para quien pregunta. E
 En una situación real, Google DNS o Cloudflare buscarían la respuesta en la jerarquía DNS hasta llegar al servidor autoritativo del dominio y devolverían lo que este publica, sujeto a caché y controles. No hace falta evadir ni controlar el resolver público. La respuesta DNS tampoco garantiza que una IP sea segura para una aplicación: solo indica a qué dirección se asocia el nombre.
 
 El servidor de este laboratorio es distinto: `dns_rebinding_server.py` responde por UDP en tu máquina. Los scripts le consultan directamente, y `run_with_fake_dns.py` redirige solo las resoluciones de `midominio.test` dentro de ese proceso. No cambia la configuración DNS de Windows ni suplanta a Google o Cloudflare.
+
+### ¿Quién pregunta y cuál es el flujo end-to-end?
+
+En esta prueba, el navegador **no resuelve `midominio.test`**. El navegador solo se comunica con la app por `http://localhost:5000`; es la app Flask la que intenta resolver el dominio que escribiste en el formulario.
+
+1. El navegador envía a Flask el formulario con `http://midominio.test:5000/internal/secret`.
+2. Flask extrae el hostname `midominio.test` y lo valida con `socket.getaddrinfo()`.
+3. La función `validar_host()` llama a `socket.getaddrinfo()` para validar la IP. Como la app se inició con `run_with_fake_dns.py`, esa llamada pasa por el puente y sale por UDP hacia el DNS falso local. La primera respuesta es `93.184.216.34`, que pasa la validación.
+4. Flask continúa con `requests.get()` para hacer el fetch. Como recibe la URL con el nombre `midominio.test` y no reutiliza la IP validada, `requests` necesita resolverlo otra vez para abrir la conexión. Esa segunda llamada también pasa por el puente y vuelve a consultar el DNS falso.
+5. Es la segunda consulta del DNS de laboratorio, así que responde `127.0.0.1`. La app se conecta a `127.0.0.1:5000`, que es el propio servidor Flask.
+6. Flask recibe esa petición en `/internal/secret`, devuelve el secreto ficticio a `requests`, y la página muestra el resultado al navegador.
+
+En resumen: **el navegador habla con Flask; Flask hace las dos consultas DNS y luego el fetch**. La validación y la conexión ocurren dentro del servidor, no en el navegador.
+
+### End-to-end local vs. vida real
+
+| En este laboratorio, todo es local | En un caso real |
+| --- | --- |
+| `dns_rebinding_server.py` corre en tu máquina como DNS falso, en `127.0.0.1:5354`. | El DNS autoritativo controlado por quien posee el dominio está en otro equipo o servicio. |
+| `run_with_fake_dns.py` levanta la app Flask y redirige, dentro de ese proceso, las consultas de `midominio.test` al DNS local. **No es el DNS falso.** | La app usa el resolver DNS configurado en su sistema o infraestructura. Ese resolver consulta la jerarquía DNS y llega al DNS autoritativo del dominio. |
+| El navegador envía el formulario a Flask en `localhost:5000`. La app pregunta directamente al DNS local: primero recibe una IP pública de ejemplo y luego `127.0.0.1`. El fetch a `127.0.0.1:5000` vuelve a la misma app y alcanza `/internal/secret`. | El navegador envía la URL a la app alojada en un servidor. La app hace las resoluciones desde ese servidor; si acaba conectándose a una IP privada, el intento de acceso interno también sale desde ese servidor, no desde el navegador del usuario. |
+| El servidor falso cambia la respuesta por número de consulta, así que el resultado es inmediato y predecible. | Las cachés y el TTL pueden hacer que ambas resoluciones reciban la misma IP. El cambio no está garantizado; depende del resolver, de sus cachés y de que la app no reutilice la IP validada. |
+
+En una situación real, el dueño de un dominio puede administrar sus respuestas DNS autoritativas. El resolver recursivo —por ejemplo, el de una empresa, Google o Cloudflare— no se saltea: busca la respuesta del dominio y se la devuelve a la app. El laboratorio reemplaza ese recorrido por una consulta directa al servidor local para poder mostrar el flujo sin configurar un dominio público ni depender de las cachés reales.
 
 ### ¿Por qué la respuesta cambia enseguida y no espera cinco segundos?
 
@@ -180,7 +204,7 @@ En estas rutas de fetch, el DNS cambiante de la demo no debería llevar la conex
 | [dns_rebinding_server.py](./dns_rebinding_server.py) | DNS falso local para la demostración. |
 | [dns_rebinding_demo.py](./dns_rebinding_demo.py) | Demostración aislada de cambio de IP y fetch. |
 | [vulnerable_app_resolve_check.py](./vulnerable_app_resolve_check.py) | Valida una resolución, pero vuelve a resolver al hacer el fetch. |
-| [run_with_fake_dns.py](./run_with_fake_dns.py) | Inicia la app anterior con el DNS de laboratorio. |
+| [run_with_fake_dns.py](./run_with_fake_dns.py) | Inicia la app y hace de puente: dirige solo las consultas de `midominio.test` al DNS falso local. |
 | [fixed_app.py](<../Caso 1 - Sol - SSRF/fixed_app.py>) | Página reforzada en el puerto 5001; conecta a la IP validada y no sigue redirects. |
 
 El [README.md](./README.md) menciona `dns_rebinding_demo_simulado.py`, pero ese archivo no está en esta carpeta. No necesitas ese script para seguir los escenarios de esta guía.
