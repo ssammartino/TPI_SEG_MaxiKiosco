@@ -17,7 +17,7 @@ Correr:
 Escucha en http://localhost:5001
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template_string
 import requests
 import socket
 import ipaddress
@@ -26,15 +26,94 @@ from urllib.parse import urlparse
 app = Flask(__name__)
 
 # --- 2. Allowlist de dominios permitidos (en vez de bloquear patrones) ---
+# Para el caso de uso "pegá el link de tu video" sumamos los dominios reales
+# que necesitaría una funcionalidad de preview de YouTube.
 ALLOWED_HOSTS = {
     "api.github.com",
     "jsonplaceholder.typicode.com",
+    "www.youtube.com",
+    "youtube.com",
+    "youtu.be",
+    "img.youtube.com",
 }
 
 
 @app.route("/internal/secret")
 def secret():
     return jsonify({"info": "esto no deberia ser alcanzable via /fetch"})
+
+
+# --- Mismo front que la version vulnerable, para comparar lado a lado ---
+INDEX_HTML = """
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>VideoPreview (demo reforzada)</title>
+</head>
+<body style="font-family: sans-serif; max-width: 640px; margin: 48px auto; line-height:1.4;">
+  <h1>🎬 VideoPreview (reforzado)</h1>
+  <p>Pegá el link de un video (YouTube u otro) y te mostramos una vista previa del contenido.</p>
+  <form action="/preview" method="get">
+    <input type="text" name="video_url" placeholder="https://www.youtube.com/watch?v=..."
+           style="width:70%; padding:8px; font-size:14px;" value="{{ video_url|default('') }}">
+    <button type="submit" style="padding:8px 16px; font-size:14px;">Vista previa</button>
+  </form>
+
+  {% if error %}
+    <p style="color:#b00020;"><b>Error:</b> {{ error }}</p>
+  {% endif %}
+
+  {% if result %}
+    <h3>Resultado:</h3>
+    <pre style="background:#f4f4f4; padding:12px; white-space:pre-wrap; word-break:break-all;">{{ result }}</pre>
+  {% endif %}
+
+  <hr>
+  <p style="color:#777; font-size:12px;">Backend: resuelve y valida la IP real, allowlist de hosts, sin redirects automaticos.</p>
+</body>
+</html>
+"""
+
+
+@app.route("/")
+def index():
+    return render_template_string(INDEX_HTML, error=None, result=None, video_url="")
+
+
+@app.route("/preview")
+def preview_ui():
+    video_url = request.args.get("video_url", "")
+    if not video_url:
+        return render_template_string(INDEX_HTML, error=None, result=None, video_url="")
+
+    parsed = urlparse(video_url)
+    hostname = parsed.hostname
+
+    if parsed.scheme not in ("http", "https") or not hostname or hostname not in ALLOWED_HOSTS:
+        return render_template_string(
+            INDEX_HTML, error="Host no permitido (no esta en la allowlist)",
+            result=None, video_url=video_url,
+        )
+
+    try:
+        resolve_and_validate_ip(hostname)
+    except (ValueError, socket.gaierror) as e:
+        return render_template_string(
+            INDEX_HTML, error=f"Validacion de IP fallo: {e}", result=None, video_url=video_url,
+        )
+
+    try:
+        resp = requests.get(video_url, timeout=3, allow_redirects=False)
+        if resp.is_redirect or resp.is_permanent_redirect:
+            return render_template_string(
+                INDEX_HTML, error="Redirect bloqueado (no se sigue automaticamente)",
+                result=None, video_url=video_url,
+            )
+        resultado = f"Status: {resp.status_code}\n\n{resp.text[:800]}"
+        return render_template_string(INDEX_HTML, error=None, result=resultado, video_url=video_url)
+    except requests.RequestException as e:
+        return render_template_string(INDEX_HTML, error=str(e), result=None, video_url=video_url)
 
 
 def resolve_and_validate_ip(hostname: str) -> str:
