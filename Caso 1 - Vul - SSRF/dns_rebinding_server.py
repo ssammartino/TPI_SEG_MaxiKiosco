@@ -7,22 +7,20 @@ entorno de laboratorio controlado.
 Comportamiento: a la PRIMERA consulta A para el dominio configurado responde
 con una IP publica (benigna), y a partir de la SEGUNDA consulta responde con
 127.0.0.1. Esto simula un atacante que controla el DNS de su propio dominio
-y cambia la respuesta justo despues de que el validador de la app hizo su
-chequeo (resolver #1) pero antes de que el cliente HTTP haga el fetch real
-(resolver #2), si la app resuelve el DNS dos veces.
+y cambia la respuesta justo despues de que el validador de una app hizo su
+chequeo (resolucion #1) pero antes de que el cliente HTTP haga el fetch
+real (resolucion #2), si la app resuelve el DNS dos veces por separado.
 
-Requiere privilegios de administrador para escuchar en el puerto 53, y
-configurar tu resolver (/etc/hosts no sirve para esto, hace falta apuntar
-el DNS del sistema o de la app a 127.0.0.1 en este servidor, o usar un
-dominio real delegado a este servidor). Pensado para correr en tu propia
-maquina de laboratorio, nunca contra infraestructura de terceros.
+Escucha en un puerto NO privilegiado (5353 por defecto) para no necesitar
+permisos de administrador ni tocar la configuracion de DNS del sistema.
+El cliente de la demo (dns_rebinding_demo.py) le consulta directamente a
+este puerto, simulando lo que haria el resolver de una app vulnerable.
+Pensado para correr en tu propia maquina de laboratorio, nunca contra
+infraestructura de terceros.
 
 Uso:
-    sudo python dns_rebinding_server.py midominio.test
-
-Luego apuntá la resolución de "midominio.test" a este servidor (por ejemplo
-agregando un NS/registro de prueba en tu propio entorno de DNS local, o
-usando una herramienta como dnsmasq apuntando a 127.0.0.1 como forwarder).
+    python dns_rebinding_server.py midominio.test
+    python dns_rebinding_server.py midominio.test 5353   # puerto explicito
 """
 
 import socket
@@ -30,6 +28,7 @@ import sys
 import struct
 
 DOMAIN = sys.argv[1] if len(sys.argv) > 1 else "midominio.test"
+PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 5354
 PUBLIC_IP = "93.184.216.34"   # IP publica benigna de ejemplo (primer round)
 REBIND_IP = "127.0.0.1"       # IP objetivo real (segundo round en adelante)
 
@@ -58,8 +57,8 @@ def build_response(query: bytes, ip: str) -> bytes:
 
 def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("0.0.0.0", 53))
-    print(f"Escuchando consultas DNS para '{DOMAIN}' en el puerto 53...")
+    sock.bind(("0.0.0.0", PORT))
+    print(f"Escuchando consultas DNS para '{DOMAIN}' en 127.0.0.1:{PORT}...")
     print(f"1ra consulta -> {PUBLIC_IP} | 2da en adelante -> {REBIND_IP}")
 
     while True:

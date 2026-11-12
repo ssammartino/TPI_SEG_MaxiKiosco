@@ -17,13 +17,20 @@ import re
 
 app = Flask(__name__)
 
-# --- "Metadata interna" simulada: lo que un atacante quiere robar vía SSRF ---
+# --- "Archivo interno" simulado: lo que un atacante quiere robar vía SSRF.
+# Simula un .env filtrado con credenciales (todo ficticio, solo para la demo).
 @app.route("/internal/secret")
 def secret():
-    return jsonify({
-        "flag": "FLAG{ssrf_internal_metadata_leak}",
-        "note": "Este endpoint deberia ser accesible SOLO desde localhost / red interna"
-    })
+    contenido = (
+        "# .env interno - CONFIDENCIAL, no exponer fuera de la red interna\n"
+        "DB_HOST=db-prod.internal.corp\n"
+        "DB_USER=admin\n"
+        "DB_PASSWORD=Correct_Horse_Battery_Staple_99!\n"
+        "AWS_SECRET_ACCESS_KEY=FAKEAKIAEXAMPLE1234567890\n"
+        "JWT_SIGNING_SECRET=s3cr3t_jwt_demo_no_usar_en_produccion\n"
+        "ADMIN_PANEL_TOKEN=tkn_demo_9f8a7b6c5d4e\n"
+    )
+    return contenido, 200, {"Content-Type": "text/plain"}
 
 
 # --- Front simple: "pegá el link de tu video y te mostramos una vista previa" ---

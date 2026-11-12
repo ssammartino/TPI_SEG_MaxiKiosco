@@ -45,6 +45,44 @@ contenido de `/internal/secret`, porque:
   (`requests` → `urllib3` → el sistema operativo) sí sabe interpretar
   hexadecimal, octal, decimal de 32 bits e IPv6, pero el validador no.
 
+### ⚠️ Nota sobre Windows / portabilidad de los payloads
+
+Los payloads `0x7f000001`, `2130706433`, `0177.0.0.1`, etc. dependen de que
+el **resolver del sistema operativo** interprete esos strings como notación
+numérica alternativa de una IP. Eso lo hacen `curl`, los navegadores y a
+veces la libc de Linux — pero **`socket.getaddrinfo()` en Windows es
+estricto**: si el string no es `a.b.c.d` exacto, lo trata como nombre de
+dominio y lo manda a DNS real, lo que da `NameResolutionError`
+(`[Errno 11001] getaddrinfo failed`) en vez del 403 del filtro.
+
+Esto **no es un error tuyo ni del lab**: es exactamente el fenómeno de
+"parsers inconsistentes" que la clase busca mostrar — el mismo payload
+puede evadir el filtro en un entorno y fallar en otro por razones que no
+tienen nada que ver con el filtro en sí.
+
+Para una demo que **funcione en cualquier SO sin tocar nada en tu máquina**
+(ni hosts file, ni permisos de administrador), usá estos dos payloads de
+`attack_demo.py`, que resuelven vía **DNS público real**:
+
+- `http://127-0-0-1.nip.io:5000/internal/secret` — `nip.io` es un servicio
+  público que resuelve cualquier subdominio con una IP escrita con
+  guiones a esa misma IP. El string no contiene "127.0.0.1" (tiene
+  guiones, no puntos), así que el regex no lo detecta, y la resolución es
+  DNS normal, por lo que funciona igual en Windows/Mac/Linux.
+- `http://localtest.me:5000/internal/secret` — otro dominio público que
+  siempre resuelve a `127.0.0.1`. Ni siquiera necesita truco de formato:
+  simplemente no contiene ningún substring bloqueado.
+
+Solo necesitás que la máquina donde corrés `attack_demo.py` tenga
+internet para resolver esos dominios (el fetch real sigue siendo 100%
+local, contra tu Flask en `localhost:5000`).
+
+Si preferís una demo 100% offline, la alternativa es agregar una entrada
+en el archivo de hosts (`C:\Windows\System32\drivers\etc\hosts` en
+Windows, `/etc/hosts` en Linux/Mac) apuntando un dominio inventado a
+`127.0.0.1`, pero eso requiere permisos de administrador — por eso las
+opciones de arriba son más prácticas para mostrar en clase.
+
 ### DNS rebinding (concepto)
 
 El otro vector de la consigna es más sutil: un atacante registra un
