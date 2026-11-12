@@ -1,0 +1,29 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Servidor JWT vulnerable (5000)",
+			"type": "shell",
+			"command": "./venv/bin/flask",
+			"args": ["--app", "vulnerable.app", "run", "--host", "127.0.0.1", "--port", "5000"],
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Servidor JWT seguro (5001)",
+			"type": "shell",
+			"command": "./venv/bin/flask",
+			"args": ["--app", "seguro.app", "run", "--host", "127.0.0.1", "--port", "5001"],
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Servidor JWKS (9000)",
+			"type": "shell",
+			"command": "./venv/bin/flask",
+			"args": ["--app", "atacante.servidor_jwks", "run", "--host", "127.0.0.1", "--port", "9000"],
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

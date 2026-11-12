@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WebMail — Inbox (CORREGIDO)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; }
+    .top { display: flex; justify-content: space-between; align-items: center; }
+    .mail { border: 1px solid #ccc; border-radius: 8px; padding: 12px; margin: 10px 0; }
+    .mail .de { color: #666; font-size: 13px; }
+    .ok { background: #d1e7dd; border: 1px solid #a3cfbb; padding: 8px 12px; border-radius: 6px; font-size: 14px; }
+    button { font-size: 14px; padding: 8px 12px; border: 0; border-radius: 6px; background: #6c757d; color: #fff; cursor: pointer; }
+    pre { background: #f4f4f4; padding: 8px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <h1>📬 Inbox de <span id="quien">…</span></h1>
+    <button onclick="salir()">Salir</button>
+  </div>
+  <p class="ok">Instancia <strong>CORREGIDA</strong> (puerto 5001)</p>
+
+  <div id="inbox"></div>
+
+  <h4>Token actual</h4>
+  <pre id="token"></pre>
+
+  <script>
+    const token = localStorage.getItem('token');
+    if (!token) location.href = '/';
+    document.getElementById('token').textContent = token;
+
+    function salir() { localStorage.removeItem('token'); location.href = '/'; }
+
+    (async function cargar() {
+      const r = await fetch('/inbox', { headers: {'Authorization': 'Bearer ' + token} });
+      const data = await r.json();
+      if (!data.inbox) {
+        document.getElementById('inbox').textContent = JSON.stringify(data);
+        return;
+      }
+      document.getElementById('quien').textContent = data.usuario;
+      const cont = document.getElementById('inbox');
+      for (const m of data.inbox) {
+        cont.innerHTML += '<div class="mail"><div class="de">De: ' + m.de +
+          '</div><b>' + m.asunto + '</b><div>' + m.cuerpo + '</div></div>';
+      }
+    })();
+  </script>
+</body>
+</html>
