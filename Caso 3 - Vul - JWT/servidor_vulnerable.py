@@ -1,19 +1,24 @@
 """
-Servidor de correo CORREGIDO.
+Servidor de correo WebMail — VERSION VULNERABLE a JKU Header Injection.
 
-Es identico al vulnerable salvo por `verificar_token()`: aqui se IGNORA por
-completo el header `jku` (y `jwk`). El servidor valida SIEMPRE con su propia
-clave publica y fija el algoritmo a RS256. No importa que mande el atacante
-en el header: la firma solo valida si fue hecha con la clave privada del
-servidor, que el atacante no tiene.
+El agujero esta en `verificar_token()`: si el JWT trae un header `jku`, el
+servidor se BAJA la clave publica desde esa URL (que controla el atacante) y
+valida la firma con ella. Deberia validar SIEMPRE con su propia clave.
+
+Puerto: 5000.
 """
+import json
+
 import jwt
+import requests
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 
+# --- Clave propia del servidor (se genera al arrancar). Con ESTA clave firma
+#     los tokens legitimos y con ella DEBERIA validarlos siempre. ---
 _clave = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 SERVER_PRIVATE_PEM = _clave.private_bytes(
     encoding=serialization.Encoding.PEM,
@@ -25,6 +30,7 @@ SERVER_PUBLIC_PEM = _clave.public_key().public_bytes(
     format=serialization.PublicFormat.SubjectPublicKeyInfo,
 )
 
+# --- "Base de datos" en memoria: usuarios, contrasenas y bandejas. ---
 USUARIOS = {
     "pedro": {
         "password": "pedro123",
@@ -45,19 +51,32 @@ USUARIOS = {
 
 
 # ===========================================================================
-#  VERSION CORREGIDA
+#  AQUI ESTA LA VULNERABILIDAD
 # ===========================================================================
 def verificar_token(token):
-    """Valida la firma usando SIEMPRE la clave propia del servidor.
+    """Valida la firma del JWT.
 
-    Se ignoran `jku` y `jwk` del header. Si alguien manda un token firmado
-    con otra clave, la verificacion falla.
+    BUG: si el header trae `jku`, baja la clave de esa URL (controlada por el
+    atacante) y valida con ella. El token legitimo (sin jku) valida con la
+    clave del servidor; el del atacante (con jku) usa una clave externa.
     """
-    return jwt.decode(token, SERVER_PUBLIC_PEM, algorithms=["RS256"])
+    header = jwt.get_unverified_header(token)
+
+    if "jku" in header:
+        # <-- EL AGUJERO: confiamos en una URL que viene DENTRO del token.
+        respuesta = requests.get(header["jku"], timeout=5)
+        jwks = respuesta.json()
+        jwk = jwks["keys"][0]
+        clave_publica = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwk))
+    else:
+        # Camino legitimo: usamos NUESTRA propia clave.
+        clave_publica = SERVER_PUBLIC_PEM
+
+    return jwt.decode(token, clave_publica, algorithms=["RS256"])
 
 
 # ===========================================================================
-#  Rutas (identicas al servidor vulnerable)
+#  Rutas de la webmail (login / bandeja / inbox)
 # ===========================================================================
 @app.route("/")
 def index():
@@ -66,7 +85,6 @@ def index():
 
 @app.route("/bandeja")
 def bandeja():
-    # Pantalla del inbox (HTML). Los datos los pide por fetch a /inbox.
     return render_template("inbox.html")
 
 
@@ -79,6 +97,7 @@ def login():
     if not datos or datos["password"] != password:
         return jsonify({"error": "Credenciales invalidas"}), 401
 
+    # Token legitimo: header {alg, typ} SIN jku, firmado con la clave del server.
     token = jwt.encode({"user": usuario}, SERVER_PRIVATE_PEM, algorithm="RS256")
     return jsonify({"token": token})
 
@@ -105,7 +124,7 @@ def inbox():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print(" Servidor CORREGIDO escuchando en http://localhost:5001")
+    print(" Servidor VULNERABLE en http://localhost:5000")
     print(" Usuarios:  pedro/pedro123   admin/admin123")
     print("=" * 60)
-    app.run(host="0.0.0.0", port=5001, debug=False)
+    app.run(host="0.0.0.0", port=5000, debug=False)

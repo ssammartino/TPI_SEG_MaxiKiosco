@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claves del atacante + jku</title>
+  <style>
+    :root {
+      --bg:#0f172a; --panel:#1e293b; --panel2:#273549; --line:#334155;
+      --txt:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --ok:#22c55e; --warn:#f59e0b;
+    }
+    * { box-sizing:border-box; }
+    body { font-family:system-ui,sans-serif; background:var(--bg); color:var(--txt);
+           margin:0; padding:24px; line-height:1.45; }
+    .wrap { max-width:900px; margin:0 auto; }
+    .badge { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px;
+             font-weight:700; letter-spacing:.5px; background:#7f1d1d; color:#fecaca; }
+    h1 { font-size:22px; margin:8px 0 4px; }
+    .sub { color:var(--muted); font-size:14px; margin:0 0 20px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+            padding:16px 18px; margin-bottom:18px; }
+    .card h2 { font-size:15px; margin:0 0 4px; display:flex; align-items:center; gap:8px; }
+    .num { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px;
+           border-radius:50%; background:var(--panel2); color:var(--accent); font-weight:800; font-size:13px; }
+    .card p.d { color:var(--muted); font-size:13px; margin:2px 0 10px; }
+    pre { background:#0b1220; border:1px solid var(--line); border-radius:8px; padding:12px;
+          font-family:ui-monospace,Menlo,monospace; font-size:12px; white-space:pre-wrap;
+          word-break:break-all; margin:0; max-height:240px; overflow:auto; }
+    pre.priv { color:#fca5a5; } pre.pub { color:#86efac; } pre.jwk { color:#93c5fd; }
+    .btn { border:0; border-radius:8px; font-weight:700; cursor:pointer; transition:.15s;
+           background:var(--panel2); color:var(--accent); font-size:13px; padding:9px 14px; margin-top:8px; }
+    .btn:hover { filter:brightness(1.15); }
+    .copied { color:var(--ok); font-size:12px; margin-left:8px; }
+    .jkubox { display:flex; gap:10px; align-items:stretch; }
+    .jkubox .val { flex:1; background:#0b1220; border:1px solid var(--warn); border-radius:8px;
+                   padding:12px 14px; font-family:ui-monospace,Menlo,monospace; font-size:14px;
+                   color:#fde68a; word-break:break-all; display:flex; align-items:center; }
+    .jkubox .btn { margin-top:0; white-space:nowrap; }
+    details { margin-top:10px; }
+    summary { cursor:pointer; color:var(--muted); font-size:13px; }
+    code { background:#0b1220; padding:1px 6px; border-radius:4px; font-size:12px; color:#e2e8f0; }
+    .links { font-size:13px; color:var(--muted); margin-top:8px; }
+    .links a { color:var(--accent); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <span class="badge">🔑 CLAVES DEL ATACANTE · puerto {{ puerto }}</span>
+  <h1>Claves del atacante y línea <code>jku</code></h1>
+  <p class="sub">Al arrancar, el atacante generó este par de claves RSA. Con la privada firma; la pública se publica como JWKS y es la que el servidor vulnerable se baja del <code>jku</code>.</p>
+
+  <!-- 1. Clave privada -->
+  <div class="card">
+    <h2><span class="num">1</span> Clave privada (RSA)</h2>
+    <p class="d">Con esta clave se <b>firma</b> el token modificado. Importala en Burp (<b>JWT Editor → Keys</b>) para poder firmar.</p>
+    <pre class="priv" id="privPem">{{ privada_pem }}</pre>
+    <button class="btn" onclick="copiar('privPem','m1')">📋 Copiar PEM</button>
+    <span id="m1" class="copied"></span>
+    <details>
+      <summary>¿JWT Editor pide la clave en formato JWK? Copiala de acá</summary>
+      <pre class="jwk" id="privJwk" style="margin-top:10px">{{ privada_jwk }}</pre>
+      <button class="btn" onclick="copiar('privJwk','m2')">📋 Copiar JWK</button>
+      <span id="m2" class="copied"></span>
+    </details>
+  </div>
+
+  <!-- 2. Clave publica -->
+  <div class="card">
+    <h2><span class="num">2</span> Clave pública (RSA)</h2>
+    <p class="d">Es el par de la privada. Se publica como JWKS en el <code>jku</code> y es la que el servidor vulnerable usa para validar la firma.</p>
+    <pre class="pub" id="pubPem">{{ publica_pem }}</pre>
+    <button class="btn" onclick="copiar('pubPem','m3')">📋 Copiar PEM</button>
+    <span id="m3" class="copied"></span>
+    <p class="d" style="margin-top:10px">Publicada como JWKS en: <a href="/jwks.json" target="_blank" style="color:var(--accent)">{{ jku }}</a></p>
+  </div>
+
+  <!-- 3. Linea jku -->
+  <div class="card">
+    <h2><span class="num">3</span> Línea para agregar al header del JWT</h2>
+    <p class="d">En Burp (JWT Editor), agregá esta línea al <b>header</b> del token. Es lo que hace que el servidor se baje la clave del atacante:</p>
+    <div class="jkubox">
+      <div class="val" id="jkuLine">"jku": "{{ jku }}"</div>
+      <button class="btn" onclick="copiar('jkuLine','m4')">📋 Copiar</button>
+    </div>
+    <span id="m4" class="copied"></span>
+    <p class="d" style="margin-top:10px">El header del token queda, por ejemplo:
+      <br><code>{ "alg": "RS256", "typ": "JWT", "jku": "{{ jku }}", "kid": "{{ kid }}" }</code>
+    </p>
+  </div>
+
+  <div class="links">
+    WebMail segura (login y captura): <a href="http://localhost:5001/" target="_blank">localhost:5001</a> ·
+    JWKS: <a href="/jwks.json" target="_blank">/jwks.json</a>
+  </div>
+</div>
+
+<script>
+function copiar(preId, msgId){
+  const txt = document.getElementById(preId).textContent;
+  navigator.clipboard.writeText(txt).then(()=>{
+    const m = document.getElementById(msgId);
+    m.textContent = '✓ copiado';
+    setTimeout(()=> m.textContent = '', 1500);
+  });
+}
+</script>
+</body>
+</html>

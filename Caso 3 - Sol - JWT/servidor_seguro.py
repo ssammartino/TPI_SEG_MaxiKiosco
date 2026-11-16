@@ -1,26 +1,21 @@
 """
-Servidor de correo VULNERABLE a JKU Header Injection.
+Servidor de correo WebMail — VERSION SOLUCIONADA.
 
-El punto débil está en `verificar_token()`: si el JWT trae un header `jku`,
-el servidor se baja la clave pública desde esa URL (controlada por el
-atacante) y valida la firma con ella. Un atacante puede forjar un token
-firmado con SU propia clave, hostear SU clave pública y hacer que el
-servidor la use para validar => bypass de autenticacion.
+Identico al vulnerable salvo por `verificar_token()`: aqui se IGNORA por
+completo el header `jku` (y `jwk`). El servidor valida SIEMPRE con su propia
+clave publica y fija el algoritmo a RS256. No importa que mande el atacante
+en el header: la firma solo valida si fue hecha con la clave privada del
+servidor, que el atacante no tiene.
+
+Puerto: 5001.
 """
-import json
-
 import jwt
-import requests
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 
-# ---------------------------------------------------------------------------
-# Clave propia del servidor (se genera al arrancar). Con ESTA clave firma los
-# tokens legitimos y con ella deberia validarlos SIEMPRE.
-# ---------------------------------------------------------------------------
 _clave = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 SERVER_PRIVATE_PEM = _clave.private_bytes(
     encoding=serialization.Encoding.PEM,
@@ -32,9 +27,6 @@ SERVER_PUBLIC_PEM = _clave.public_key().public_bytes(
     format=serialization.PublicFormat.SubjectPublicKeyInfo,
 )
 
-# ---------------------------------------------------------------------------
-# "Base de datos" en memoria: usuarios, contrasenas y bandejas.
-# ---------------------------------------------------------------------------
 USUARIOS = {
     "pedro": {
         "password": "pedro123",
@@ -55,33 +47,19 @@ USUARIOS = {
 
 
 # ===========================================================================
-#  AQUI ESTA LA VULNERABILIDAD
+#  VERSION CORREGIDA
 # ===========================================================================
 def verificar_token(token):
-    """Valida la firma del JWT.
+    """Valida la firma usando SIEMPRE la clave propia del servidor.
 
-    BUG: si el header trae `jku`, se baja la clave de esa URL y valida con
-    ella. El token legitimo (sin jku) valida con la clave del servidor; el
-    token del atacante (con jku) hace que el server use una clave externa.
+    Se ignoran `jku` y `jwk` del header. Si alguien manda un token firmado
+    con otra clave, la verificacion falla.
     """
-    header = jwt.get_unverified_header(token)
-
-    if "jku" in header:
-        # <-- El agujero: confiamos en una URL que viene DENTRO del token.
-        respuesta = requests.get(header["jku"], timeout=5)
-        jwks = respuesta.json()
-        jwk = jwks["keys"][0]
-        clave_publica = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwk))
-    else:
-        # Camino legitimo: usamos nuestra propia clave.
-        clave_publica = SERVER_PUBLIC_PEM
-
-    # Nota: aunque fijamos RS256, la clave ya fue elegida por el atacante.
-    return jwt.decode(token, clave_publica, algorithms=["RS256"])
+    return jwt.decode(token, SERVER_PUBLIC_PEM, algorithms=["RS256"])
 
 
 # ===========================================================================
-#  Rutas
+#  Rutas de la webmail (login / bandeja / inbox)
 # ===========================================================================
 @app.route("/")
 def index():
@@ -90,7 +68,6 @@ def index():
 
 @app.route("/bandeja")
 def bandeja():
-    # Pantalla del inbox (HTML). Los datos los pide por fetch a /inbox.
     return render_template("inbox.html")
 
 
@@ -103,7 +80,6 @@ def login():
     if not datos or datos["password"] != password:
         return jsonify({"error": "Credenciales invalidas"}), 401
 
-    # Token legitimo: header {alg, typ} SIN jku, firmado con la clave del server.
     token = jwt.encode({"user": usuario}, SERVER_PRIVATE_PEM, algorithm="RS256")
     return jsonify({"token": token})
 
@@ -130,7 +106,7 @@ def inbox():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print(" Servidor VULNERABLE escuchando en http://localhost:5000")
+    print(" Servidor SOLUCIONADO en http://localhost:5001")
     print(" Usuarios:  pedro/pedro123   admin/admin123")
     print("=" * 60)
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=5001, debug=False)
