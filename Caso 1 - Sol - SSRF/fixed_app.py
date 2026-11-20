@@ -1,22 +1,7 @@
-"""
-fixed_app.py
-------------
-Version reforzada del endpoint /fetch. Aplica las 4 mitigaciones:
+"""Versión reforzada: allowlist, validación y fijación de IP, sin redirects."""
 
-1. Resuelve el DNS y valida la IP REAL (no el string de la URL).
-2. Allowlist de hosts permitidos en vez de denylist.
-3. Desactiva redirects automaticos en el cliente HTTP (y no sigue
-   redirects sin re-validar).
-4. (Nota de infraestructura, no de codigo): el servicio que hace estos
-   fetches deberia correr en una subred segmentada, sin rutas a
-   169.254.169.254 (metadata cloud) ni a la red interna/privada.
-
-Correr:
-    pip install flask requests
-    python fixed_app.py
-Escucha en http://localhost:5001
-"""
-
+# Flask sirve la web; requests hace el fetch; socket/ipaddress validan el destino.
+# urllib3 personaliza la conexión para usar la IP validada.
 from flask import Flask, request, jsonify, render_template_string
 import requests
 import socket
@@ -30,9 +15,7 @@ from urllib3.poolmanager import PoolManager
 
 app = Flask(__name__)
 
-# --- 2. Allowlist de dominios permitidos (en vez de bloquear patrones) ---
-# Para el caso de uso "pegá el link de tu video" sumamos los dominios reales
-# que necesitaría una funcionalidad de preview de YouTube.
+# Hosts permitidos por la función de vista previa.
 ALLOWED_HOSTS = {
     "api.github.com",
     "jsonplaceholder.typicode.com",
@@ -43,11 +26,12 @@ ALLOWED_HOSTS = {
 }
 
 
+# Adaptadores que conectan a la IP validada y conservan el hostname para TLS.
 class _PinnedConnectionMixin:
     _pinned_ip: str
 
     def _new_conn(self):
-        # Pin only the TCP destination; keep the original hostname for Host and TLS validation.
+        # Cambia solo el destino TCP; el hostname original se restaura después.
         original_dns_host = self._dns_host
         self._dns_host = self._pinned_ip
         try:
@@ -93,6 +77,7 @@ class _PinnedPoolManager(PoolManager):
         self.pool_classes_by_scheme["https"] = _PinnedHTTPSConnectionPool
 
     def _new_pool(self, scheme, host, port, *args, **kwargs):
+        # Entrega la IP validada al pool que creará la conexión.
         pool = super()._new_pool(scheme, host, port, *args, **kwargs)
         pool._pinned_ip = self._pinned_ip
         return pool
@@ -104,6 +89,7 @@ class _PinnedHTTPAdapter(HTTPAdapter):
         super().__init__()
 
     def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        # Instala pools personalizados para HTTP y HTTPS.
         self.poolmanager = _PinnedPoolManager(
             self._pinned_ip,
             num_pools=connections,
@@ -118,7 +104,6 @@ def secret():
     return jsonify({"info": "esto no deberia ser alcanzable via /fetch"})
 
 
-# --- Mismo front que la version vulnerable, para comparar lado a lado ---
 INDEX_HTML = """
 <!doctype html>
 <html lang="es">
@@ -158,6 +143,7 @@ def index():
 
 @app.route("/preview")
 def preview_ui():
+    # Solo acepta HTTP(S) hacia hosts explícitamente permitidos.
     video_url = request.args.get("video_url", "")
     if not video_url:
         return render_template_string(INDEX_HTML, error=None, result=None, video_url="")
@@ -189,8 +175,8 @@ def preview_ui():
 
 
 def resolve_and_validate_ip(hostname: str) -> str:
-    """Resuelve el hostname y valida que NINGUNA IP resuelta sea privada,
-    loopback, link-local, reservada, etc. Lanza ValueError si es invalida."""
+    """Resuelve el host y rechaza cualquier IP privada o especial."""
+    # Revisa todas las respuestas DNS, no solo la primera.
     infos = socket.getaddrinfo(hostname, None)
     ips = {info[4][0] for info in infos}
 
@@ -199,6 +185,7 @@ def resolve_and_validate_ip(hostname: str) -> str:
 
     for ip_str in ips:
         ip = ipaddress.ip_address(ip_str)
+        # Cualquier dirección no pública detiene la solicitud.
         if (ip.is_private or ip.is_loopback or ip.is_link_local or
                 ip.is_reserved or ip.is_multicast or ip.is_unspecified):
             raise ValueError(f"IP resuelta no permitida: {ip_str}")
@@ -207,8 +194,10 @@ def resolve_and_validate_ip(hostname: str) -> str:
 
 
 def request_validated_url(url: str, scheme: str, hostname: str):
+    # Reutiliza para la conexión la misma IP que acaba de validar.
     resolved_ip = resolve_and_validate_ip(hostname)
     with requests.Session() as session:
+        # Evita proxies del entorno y desactiva el seguimiento de redirects.
         session.trust_env = False
         session.mount(f"{scheme}://", _PinnedHTTPAdapter(resolved_ip))
         response = session.get(url, timeout=3, allow_redirects=False)

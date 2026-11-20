@@ -1,25 +1,7 @@
-"""
-vulnerable_app_resolve_check.py
---------------------------------
-Variante "a medio camino" entre vulnerable_app.py y fixed_app.py: en vez de
-un regex sobre el string, ACA SI resolvemos el hostname y validamos que la
-IP resuelta no sea privada/loopback (como el punto 1 de las mitigaciones).
+"""Demo local de DNS rebinding: valida el host, pero no fija la IP al conectar."""
 
-Pero el bug sigue ahi: validamos con UNA resolucion de DNS, y el fetch real
-(requests.get) hace OTRA resolucion por separado, sin reusar la IP que ya
-validamos. Ese gap entre "valide" y "me conecte" es EXACTAMENTE lo que
-explota un DNS rebinding: si el servidor DNS responde distinto en la
-segunda consulta, el validador nunca se entera.
-
-Correr:
-    pip install flask requests
-    python vulnerable_app_resolve_check.py
-Escucha en http://localhost:5000
-
-Para probar el rebinding contra ESTA app, no la corras directo: usala a
-traves de run_with_fake_dns.py (ver ese archivo y el README).
-"""
-
+# Flask sirve las rutas; requests hace el fetch; socket resuelve DNS;
+# ipaddress clasifica IPs y urlparse extrae el host de la URL.
 from flask import Flask, request, render_template_string
 import requests
 import socket
@@ -31,6 +13,7 @@ app = Flask(__name__)
 
 @app.route("/internal/secret")
 def secret():
+    # Respuesta ficticia para que la demo tenga un recurso interno local.
     contenido = (
         "# .env interno - CONFIDENCIAL, no exponer fuera de la red interna\n"
         "DB_PASSWORD=Correct_Horse_Battery_Staple_99!\n"
@@ -60,15 +43,16 @@ INDEX_HTML = """
 """
 
 
+# ipaddress interpreta la dirección y expone estas categorías como booleanos.
 def es_ip_privada(ip_str: str) -> bool:
     ip = ipaddress.ip_address(ip_str)
+    # Si cualquiera es True, la IP no se considera un destino público seguro.
     return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
 
 
 def validar_host(hostname: str) -> str:
-    """PASO 1 (validacion): resuelve el hostname AHORA MISMO y chequea que
-    la IP no sea privada. Esto parece correcto -- el problema es que nadie
-    reusa esta IP despues; el fetch real (mas abajo) resuelve de nuevo."""
+    """Resuelve el host y rechaza respuestas privadas o especiales."""
+    # DNS puede devolver varias direcciones; se rechaza el host si alguna es privada.
     infos = socket.getaddrinfo(hostname, None)
     ips = {info[4][0] for info in infos}
     for ip_str in ips:
@@ -79,11 +63,13 @@ def validar_host(hostname: str) -> str:
 
 @app.route("/")
 def index():
+    # Muestra el formulario sin resultados.
     return render_template_string(INDEX_HTML, error=None, result=None, video_url="")
 
 
 @app.route("/preview")
 def preview():
+    # Obtiene la URL y extrae el nombre de host que se consultará en DNS.
     video_url = request.args.get("video_url", "")
     if not video_url:
         return render_template_string(INDEX_HTML, error=None, result=None, video_url="")
@@ -93,16 +79,15 @@ def preview():
         return render_template_string(INDEX_HTML, error="URL invalida", result=None, video_url=video_url)
 
     try:
+        # Esta IP se valida aquí, pero no se entrega a requests para conectarse.
         ip_validacion = validar_host(hostname)
     except (ValueError, socket.gaierror) as e:
         return render_template_string(
             INDEX_HTML, error=f"Validacion de IP fallo: {e}", result=None, video_url=video_url
         )
 
-    # --- BUG: esta llamada hace SU PROPIA resolucion de DNS internamente,
-    # distinta de la que ya hicimos en validar_host(). Si el DNS cambio la
-    # respuesta entre medio, aca termina pegando contra otra IP distinta
-    # a la que "validamos" arriba. ---
+    # requests recibe el nombre original y hace otra resolución al conectar.
+    # Si DNS responde distinto, esta conexión no usa necesariamente la IP validada.
     try:
         resp = requests.get(video_url, timeout=3)
         resultado = f"(IP validada: {ip_validacion})\nStatus: {resp.status_code}\n\n{resp.text[:800]}"
