@@ -31,16 +31,16 @@ USUARIOS = {
     "pedro": {
         "password": "pedro123",
         "inbox": [
-            {"de": "cumple@gmail.com", "asunto": "Fiesta el sabado", "cuerpo": "Te espero a las 21hs."},
-            {"de": "newsletter@python.org", "asunto": "Python Weekly", "cuerpo": "Novedades de la semana."},
+            {"de": "cumple@gmail.com", "asunto": "Fiesta el sabado", "cuerpo": "Hola Pedro, te espero a las 21hs."},
+            {"de": "newsletter@python.org", "asunto": "Python Weekly", "cuerpo": "Pedro, estas son las novedades de la semana."},
         ],
     },
     "admin": {
         "password": "admin123",
         "inbox": [
-            {"de": "ceo@empresa.com", "asunto": "Credenciales produccion", "cuerpo": "root / S3cr3t0-Prod-2024"},
-            {"de": "banco@empresa.com", "asunto": "Transferencia pendiente", "cuerpo": "Aprobar USD 250.000 a cuenta 0099."},
-            {"de": "legal@empresa.com", "asunto": "Contrato confidencial", "cuerpo": "No reenviar: fusion con ACME."},
+            {"de": "ceo@empresa.com", "asunto": "Credenciales produccion", "cuerpo": "Admin, las credenciales de root son: root / S3cr3t0-Prod-2024"},
+            {"de": "banco@empresa.com", "asunto": "Transferencia pendiente", "cuerpo": "Estimado Admin, aprobar USD 250.000 a cuenta 0099."},
+            {"de": "legal@empresa.com", "asunto": "Contrato confidencial", "cuerpo": "Admin, no reenviar: fusion con ACME."},
         ],
     },
 }

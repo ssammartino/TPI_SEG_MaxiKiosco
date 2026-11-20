@@ -49,9 +49,26 @@
   <h1>Claves del atacante y línea <code>jku</code></h1>
   <p class="sub">Al arrancar, el atacante generó este par de claves RSA. Con la privada firma; la pública se publica como JWKS y es la que el servidor vulnerable se baja del <code>jku</code>.</p>
 
-  <!-- 1. Clave privada -->
+  <button class="btn" onclick="regenerar()" style="margin-bottom:18px">🔄 Generar nuevo par de claves</button>
+  <span id="mRegen" class="copied"></span>
+
+  <!-- 1. Linea jku -->
   <div class="card">
-    <h2><span class="num">1</span> Clave privada (RSA)</h2>
+    <h2><span class="num">1</span> Línea para agregar al header del JWT</h2>
+    <p class="d">En Burp (JWT Editor), agregá esta línea al <b>header</b> del token. Es lo que hace que el servidor se baje la clave del atacante:</p>
+    <div class="jkubox">
+      <div class="val" id="jkuLine">"jku": "{{ jku }}"</div>
+      <button class="btn" onclick="copiar('jkuLine','m4')">📋 Copiar</button>
+    </div>
+    <span id="m4" class="copied"></span>
+    <p class="d" style="margin-top:10px">El header del token queda, por ejemplo:
+      <br><code>{ "alg": "RS256", "typ": "JWT", "jku": "{{ jku }}", "kid": "{{ kid }}" }</code>
+    </p>
+  </div>
+
+  <!-- 2. Clave privada -->
+  <div class="card">
+    <h2><span class="num">2</span> Clave privada (RSA)</h2>
     <p class="d">Con esta clave se <b>firma</b> el token modificado. Importala en Burp (<b>JWT Editor → Keys</b>) para poder firmar.</p>
     <pre class="priv" id="privPem">{{ privada_pem }}</pre>
     <button class="btn" onclick="copiar('privPem','m1')">📋 Copiar PEM</button>
@@ -64,28 +81,14 @@
     </details>
   </div>
 
-  <!-- 2. Clave publica -->
+  <!-- 3. Clave publica -->
   <div class="card">
-    <h2><span class="num">2</span> Clave pública (RSA)</h2>
+    <h2><span class="num">3</span> Clave pública (RSA)</h2>
     <p class="d">Es el par de la privada. Se publica como JWKS en el <code>jku</code> y es la que el servidor vulnerable usa para validar la firma.</p>
     <pre class="pub" id="pubPem">{{ publica_pem }}</pre>
     <button class="btn" onclick="copiar('pubPem','m3')">📋 Copiar PEM</button>
     <span id="m3" class="copied"></span>
     <p class="d" style="margin-top:10px">Publicada como JWKS en: <a href="/jwks.json" target="_blank" style="color:var(--accent)">{{ jku }}</a></p>
-  </div>
-
-  <!-- 3. Linea jku -->
-  <div class="card">
-    <h2><span class="num">3</span> Línea para agregar al header del JWT</h2>
-    <p class="d">En Burp (JWT Editor), agregá esta línea al <b>header</b> del token. Es lo que hace que el servidor se baje la clave del atacante:</p>
-    <div class="jkubox">
-      <div class="val" id="jkuLine">"jku": "{{ jku }}"</div>
-      <button class="btn" onclick="copiar('jkuLine','m4')">📋 Copiar</button>
-    </div>
-    <span id="m4" class="copied"></span>
-    <p class="d" style="margin-top:10px">El header del token queda, por ejemplo:
-      <br><code>{ "alg": "RS256", "typ": "JWT", "jku": "{{ jku }}", "kid": "{{ kid }}" }</code>
-    </p>
   </div>
 
   <div class="links">
@@ -102,6 +105,18 @@ function copiar(preId, msgId){
     m.textContent = '✓ copiado';
     setTimeout(()=> m.textContent = '', 1500);
   });
+}
+
+async function regenerar(){
+  const m = document.getElementById('mRegen');
+  m.textContent = 'generando…';
+  const r = await fetch('/regenerar', { method: 'POST' });
+  const d = await r.json();
+  document.getElementById('privPem').textContent = d.privada_pem;
+  document.getElementById('pubPem').textContent  = d.publica_pem;
+  document.getElementById('privJwk').textContent = d.privada_jwk;
+  m.textContent = '✓ nuevo par generado';
+  setTimeout(()=> m.textContent = '', 2000);
 }
 </script>
 </body>

@@ -54,7 +54,8 @@ if __name__ == "__main__":
     threading.Thread(target=correr, args=(servidor_seguro.app, 5001), daemon=True).start()
 
     time.sleep(1.2)
-    webbrowser.open("http://localhost:5001/")
+    webbrowser.open("http://localhost:5001/")   # WebMail segura (login)
+    webbrowser.open("http://localhost:9000/")   # pagina del atacante (claves + jku)
 
     try:
         while True:

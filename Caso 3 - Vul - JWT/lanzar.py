@@ -55,7 +55,8 @@ if __name__ == "__main__":
     threading.Thread(target=correr, args=(servidor_vulnerable.app, 5000), daemon=True).start()
 
     time.sleep(1.2)
-    webbrowser.open("http://localhost:5000/")
+    webbrowser.open("http://localhost:5000/")   # WebMail (login)
+    webbrowser.open("http://localhost:9000/")   # pagina del atacante (claves + jku)
 
     try:
         while True:

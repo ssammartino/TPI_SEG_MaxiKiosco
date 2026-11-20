@@ -23,13 +23,9 @@
 
   <div id="inbox"></div>
 
-  <h4>Token actual</h4>
-  <pre id="token"></pre>
-
   <script>
     const token = localStorage.getItem('token');
     if (!token) location.href = '/';        // sin token -> volver al login
-    document.getElementById('token').textContent = token;
 
     function salir() { localStorage.removeItem('token'); location.href = '/'; }
 
